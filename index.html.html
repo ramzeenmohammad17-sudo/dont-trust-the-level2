@@ -1,0 +1,269 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Don't Trust the Level</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#101010;color:white;font-family:Arial,sans-serif}
+body{display:flex;justify-content:center;align-items:center}
+#box{text-align:center}
+canvas{display:block;background:#181818;border:3px solid #777;image-rendering:pixelated}
+#help{margin-top:12px;color:#ddd;font:16px monospace}
+#mobileControls{display:none;justify-content:space-between;gap:18px;margin:12px auto 0;max-width:520px}
+#mobileControls button{flex:1;height:68px;border:3px solid #777;border-radius:14px;background:#292929;color:#fff;font:bold 20px monospace;touch-action:none;user-select:none}
+@media (max-width:700px){
+  body{align-items:flex-start;padding-top:14px}
+  #box{width:100%;padding:8px}
+  canvas{width:100%;height:auto}
+  #help{font-size:12px}
+  #mobileControls{display:flex}
+}
+</style>
+</head>
+<body>
+<div id="box">
+<canvas id="game" width="900" height="500"></canvas>
+<div id="help">A/D or ←/→ = move &nbsp; SPACE/W/↑ = jump &nbsp; R = restart</div>
+<div id="mobileControls">
+  <button id="left">◀</button>
+  <button id="jump">JUMP</button>
+  <button id="right">▶</button>
+</div>
+</div>
+
+<script>
+"use strict";
+
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+const keys={};
+window.addEventListener("keydown",function(e){
+  keys[e.key.toLowerCase()]=true;
+  if(["arrowleft","arrowright","arrowup"," "].includes(e.key.toLowerCase())) e.preventDefault();
+  if(e.key.toLowerCase()==="r") restart();
+});
+window.addEventListener("keyup",function(e){keys[e.key.toLowerCase()]=false;});
+
+const levels=[
+ {name:"THE EASY ONE",width:2600,goal:2450,
+  platforms:[[0,430,690,70],[755,430,575,70],[1385,430,570,70],[2020,430,580,70]],
+  traps:[[620,400,35,30,"fall"],[1110,400,55,30,"spike"],[1530,400,55,30,"spike"],[2200,400,55,30,"spike"]]},
+ {name:"WHY IS THE FLOOR MOVING?",width:3000,goal:2820,
+  platforms:[[0,430,770,70],[835,390,450,110],[1350,430,570,70],[2010,365,410,135],[2475,430,525,70]],
+  traps:[[690,400,50,30,"spike"],[1010,360,70,30,"fake"],[1510,400,50,30,"spike"],[2220,335,65,30,"fake"],[2700,400,55,30,"spike"]]},
+ {name:"THE LEVEL LIKES YOU",width:3200,goal:3020,
+  platforms:[[0,430,950,70],[1050,430,650,70],[1780,430,500,70],[2380,430,820,70]],
+  traps:[[840,400,70,30,"spike"],[1280,400,70,30,"spike"],[1970,400,70,30,"spike"],[2580,400,80,30,"spike"]]}
+];
+
+let level=0,deaths=0,won=false;
+let player={x:80,y:370,w:28,h:45,vx:0,vy:0,onGround:false};
+let notice="",noticeTimer=0;
+
+function restart(){
+ player={x:80,y:370,w:28,h:45,vx:0,vy:0,onGround:false};
+ noticeTimer=0;
+}
+
+function hit(a,b){
+ return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y;
+}
+
+function die(text){
+ deaths++;
+ notice=text;
+ noticeTimer=70;
+ restart();
+}
+
+function advance(){
+ if(level<levels.length-1){
+   level++;
+   restart();
+   notice="LEVEL "+(level+1);
+   noticeTimer=80;
+ }else{
+   won=true;
+ }
+}
+
+function update(){
+ if(won)return;
+
+ const L=levels[level];
+ const left=keys["a"]||keys["arrowleft"];
+ const right=keys["d"]||keys["arrowright"];
+ const jump=keys[" "]||keys["w"]||keys["arrowup"];
+
+ if(left)player.vx-=0.7;
+ if(right)player.vx+=0.7;
+ if(!left&&!right)player.vx*=0.82;
+ player.vx=Math.max(-6,Math.min(6,player.vx));
+
+ if(jump && player.onGround){
+   player.vy=-12;
+   player.onGround=false;
+ }
+
+ player.vy+=0.55;
+ const oldY=player.y;
+ player.x+=player.vx;
+ player.y+=player.vy;
+ player.onGround=false;
+
+ if(player.x<0){player.x=0;player.vx=0;}
+
+ for(const q of L.platforms){
+   const r={x:q[0],y:q[1],w:q[2],h:q[3]};
+   if(hit(player,r) && player.vy>=0 && oldY+player.h<=r.y+2){
+     player.y=r.y-player.h;
+     player.vy=0;
+     player.onGround=true;
+   }
+ }
+
+ for(const t of L.traps){
+   const r={x:t[0],y:t[1],w:t[2],h:t[3]};
+   if(hit(player,r)){
+     if(t[4]==="fake") die("THAT PLATFORM WAS FAKE!");
+     else if(t[4]==="spike") die("SPIKES!");
+     else die("THE FLOOR WAS A LIE!");
+     return;
+   }
+ }
+
+ if(player.y>560){die("WELCOME TO THE VOID!");return;}
+ if(player.x>L.goal)advance();
+ if(noticeTimer>0)noticeTimer--;
+}
+
+function draw(){
+ const L=levels[level];
+ ctx.clearRect(0,0,900,500);
+
+ // camera
+ let cam=Math.max(0,Math.min(L.width-900,player.x-330));
+
+ // background
+ ctx.fillStyle="#181818";
+ ctx.fillRect(0,0,900,500);
+
+ // grid
+ ctx.strokeStyle="#252525";
+ ctx.lineWidth=1;
+ for(let gx=(-cam%50);gx<900;gx+=50){
+   ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,500);ctx.stroke();
+ }
+ for(let gy=0;gy<500;gy+=50){
+   ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(900,gy);ctx.stroke();
+ }
+
+ ctx.save();
+ ctx.translate(-cam,0);
+
+ // platforms
+ for(const q of L.platforms){
+   ctx.fillStyle="#666";
+   ctx.fillRect(q[0],q[1],q[2],q[3]);
+   ctx.fillStyle="#aaa";
+   ctx.fillRect(q[0],q[1],q[2],7);
+ }
+
+ // traps
+ for(const t of L.traps){
+   if(t[4]==="spike"){
+     ctx.fillStyle="#eee";
+     for(let sx=t[0];sx<t[0]+t[2];sx+=20){
+       ctx.beginPath();
+       ctx.moveTo(sx,t[1]+30);
+       ctx.lineTo(sx+10,t[1]);
+       ctx.lineTo(sx+20,t[1]+30);
+       ctx.fill();
+     }
+   }else if(t[4]==="fake"){
+     ctx.fillStyle="#444";ctx.fillRect(t[0],t[1],t[2],t[3]);
+     ctx.fillStyle="#ddd";ctx.font="24px monospace";ctx.fillText("?",t[0]+40,t[1]+24);
+   }else{
+     ctx.fillStyle="#080808";ctx.fillRect(t[0],t[1],t[2],t[3]);
+   }
+ }
+
+ // exit
+ ctx.fillStyle="#fff";
+ ctx.fillRect(L.goal,300,8,130);
+ ctx.font="bold 18px monospace";
+ ctx.fillText("EXIT",L.goal-5,285);
+
+ // player
+ ctx.fillStyle="#fff";
+ ctx.fillRect(player.x,player.y,player.w,player.h);
+ ctx.fillStyle="#111";
+ ctx.fillRect(player.x+6,player.y+10,5,5);
+ ctx.fillRect(player.x+18,player.y+10,5,5);
+
+ ctx.restore();
+
+ // UI
+ ctx.fillStyle="#fff";
+ ctx.font="bold 20px monospace";
+ ctx.fillText(L.name,20,30);
+ ctx.font="15px monospace";
+ ctx.fillStyle="#ccc";
+ ctx.fillText("LEVEL "+(level+1)+"/"+levels.length+"   DEATHS: "+deaths,20,54);
+
+ if(noticeTimer>0){
+   ctx.textAlign="center";
+   ctx.fillStyle="#fff";
+   ctx.font="bold 28px monospace";
+   ctx.fillText(notice,450,95);
+   ctx.textAlign="left";
+ }
+
+ if(won){
+   ctx.fillStyle="rgba(0,0,0,.92)";
+   ctx.fillRect(0,0,900,500);
+   ctx.textAlign="center";
+   ctx.fillStyle="#fff";
+   ctx.font="bold 42px monospace";
+   ctx.fillText("YOU BEAT THE LEVEL!",450,190);
+   ctx.font="20px monospace";
+   ctx.fillText("Can you trust the next game?",450,235);
+   ctx.fillText("Press R to play again",450,285);
+   ctx.textAlign="left";
+ }
+}
+
+
+function bindTouch(id,key){
+  const b=document.getElementById(id);
+  const on=ev=>{ev.preventDefault();keys[key]=true;};
+  const off=ev=>{ev.preventDefault();keys[key]=false;};
+  b.addEventListener("touchstart",on,{passive:false});
+  b.addEventListener("touchend",off,{passive:false});
+  b.addEventListener("touchcancel",off,{passive:false});
+  b.addEventListener("mousedown",on);
+  b.addEventListener("mouseup",off);
+  b.addEventListener("mouseleave",off);
+}
+bindTouch("left","a");
+bindTouch("right","d");
+bindTouch("jump"," ");
+
+function loop(){
+ try{
+   update();
+   draw();
+   requestAnimationFrame(loop);
+ }catch(err){
+   ctx.fillStyle="#111";ctx.fillRect(0,0,900,500);
+   ctx.fillStyle="#fff";ctx.font="20px monospace";
+   ctx.fillText("GAME ERROR - press Ctrl+R to reload",35,60);
+   console.error(err);
+ }
+}
+draw();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
